@@ -170,7 +170,7 @@
                     
                     await roomDocRef.set({
                         hostId: user.uid,
-                        status: 'lobby', // lobby, playing, results
+                        status: 'lobby', // lobby, playing, paused, end
                         currentScenario: 0,
                         showFeedback: false,
                         createdAt: Date.now()
@@ -308,8 +308,17 @@
                 return () => { unsubRoom(); unsubPlayers(); };
             }, [roomCode, appId, db]); // Добавил зависимости
 
-            const nextStep = async () => {
+            const togglePause = async () => {
                 if (!roomData) return;
+                const roomDocRef = db.collection('artifacts').doc(appId).collection('public').doc('data').collection(`room_${roomCode}`).doc('status');
+                const isPaused = roomData.status === 'paused';
+                await roomDocRef.update({ 
+                    status: isPaused ? 'playing' : 'paused' // Переключение между playing и paused
+                });
+            };
+
+            const nextStep = async () => {
+                if (!roomData || roomData.status === 'paused') return; // Добавлен запрет на переход во время паузы
                 const roomDocRef = db.collection('artifacts').doc(appId).collection('public').doc('data').collection(`room_${roomCode}`).doc('status');
                 
                 if (roomData.status === 'lobby') {
@@ -396,7 +405,7 @@
                 );
             }
 
-            // Game State
+            // Game State (Playing or Paused)
             const scenario = scenarios[roomData.currentScenario];
             const currentAnswers = players.filter(p => p[`answer_${roomData.currentScenario}`]);
             
@@ -469,14 +478,29 @@
                             </div>
                         </div>
 
-                        <button 
-                            onClick={nextStep}
-                            className="w-full py-6 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-2xl text-xl shadow-lg transition"
-                        >
-                            {roomData.showFeedback 
-                                ? (roomData.currentScenario < scenarios.length - 1 ? "Следующая Ситуация ->" : "Завершить Игру") 
-                                : "Показать Результаты"}
-                        </button>
+                        {/* HOST CONTROLS */}
+                        <div className="flex gap-4">
+                            <button
+                                onClick={togglePause}
+                                className={`w-1/3 py-4 text-white font-bold rounded-2xl text-xl shadow-lg transition transform hover:scale-105 ${
+                                    roomData.status === 'paused' 
+                                        ? 'bg-red-600 hover:bg-red-500' 
+                                        : 'bg-yellow-600 hover:bg-yellow-500'
+                                }`}
+                            >
+                                {roomData.status === 'paused' ? "▶️ Возобновить" : "⏸️ Пауза"}
+                            </button>
+
+                            <button
+                                onClick={nextStep}
+                                disabled={roomData.status === 'paused'}
+                                className={`w-2/3 py-4 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-2xl text-xl shadow-lg transition ${roomData.status === 'paused' ? 'opacity-50 cursor-not-allowed' : 'hover:scale-105'}`}
+                            >
+                                {roomData.showFeedback 
+                                    ? (roomData.currentScenario < scenarios.length - 1 ? "Следующая Ситуация ->" : "Завершить Игру") 
+                                    : "Показать Результаты"}
+                            </button>
+                        </div>
                     </div>
                 </div>
             );
@@ -534,6 +558,19 @@
             };
 
             if (!roomData) return <div className="p-10 text-center">Подключение к комнате...</div>;
+
+            if (roomData.status === 'paused') {
+                return (
+                    <div className="text-center p-8 max-w-md w-full fade-in">
+                        <div className="text-8xl mb-6">🛑</div>
+                        <h2 className="text-3xl font-bold mb-4 text-yellow-300">ИГРА НА ПАУЗЕ</h2>
+                        <p className="text-gray-400">Ведущий приостановил игру. Ожидайте возобновления.</p>
+                        <div className="mt-8 p-4 bg-slate-800 rounded-lg text-sm text-slate-500">
+                             Код комнаты: {roomCode}
+                        </div>
+                    </div>
+                );
+            }
 
             if (roomData.status === 'lobby') {
                 return (
