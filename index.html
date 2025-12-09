@@ -1,0 +1,619 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EQ Simulator: Multiplayer</title>
+    
+    <!-- React & Tailwind -->
+    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Firebase SDKs (Compat version for browser usage) -->
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #0f172a; color: white; }
+        .fade-in { animation: fadeIn 0.5s ease-in; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        /* Анимация пульсации для ожидания */
+        .pulse-ring { animation: pulse-ring 2s cubic-bezier(0.215, 0.61, 0.355, 1) infinite; }
+        @keyframes pulse-ring { 0% { transform: scale(0.33); } 80%, 100% { opacity: 0; } }
+    </style>
+</head>
+<body>
+    <div id="root" class="min-h-screen flex items-center justify-center p-4 w-full"></div>
+
+    <!-- ВЕСЬ КОД ПРИЛОЖЕНИЯ НАХОДИТСЯ ЗДЕСЬ -->
+    <script type="text/babel">
+        // --- CONFIGURATION & SCENARIOS ---
+        const scenarios = [
+            {
+                id: 1,
+                title: "Пропавший Тиммейт",
+                context: "Дедлайн завтра. Тиммейт Вася молчит 2 дня, но постит сторис. Что делаем?",
+                image: "📱",
+                options: [
+                    { id: 'A', text: "Наехать в общем чате ('Ты офигел?')", type: "reactive", feedback: "Конфликт и стресс.", color: "red" },
+                    { id: 'B', text: "Сделать самому молча и обидеться", type: "passive", feedback: "Выгорание и обида.", color: "yellow" },
+                    { id: 'C', text: "Написать лично и предложить план", type: "proactive", feedback: "Решение проблемы.", color: "green" }
+                ]
+            },
+            {
+                id: 2,
+                title: "Несправедливая Оценка",
+                context: "Препод поставил 3, хотя работа идеальна. Комментарий: 'Тема не раскрыта'.",
+                image: "🎓",
+                options: [
+                    { id: 'A', text: "Громко возмутиться при всех", type: "reactive", feedback: "Испорченные отношения.", color: "red" },
+                    { id: 'B', text: "Спросить после пары: 'Что улучшить?'", type: "proactive", feedback: "Конструктивный диалог.", color: "green" },
+                    { id: 'C', text: "Промолчать и жаловаться друзьям", type: "passive", feedback: "Руминация (застревание).", color: "yellow" }
+                ]
+            },
+            {
+                id: 3,
+                title: "Вечеринка vs Экзамен",
+                context: "Завтра сложный зачет. Друзья зовут на тусовку века. Очень хочется пойти.",
+                image: "🎉",
+                options: [
+                    { id: 'A', text: "Пойти и надеяться на удачу", type: "reactive", feedback: "Тревога утром.", color: "red" },
+                    { id: 'B', text: "Остаться дома и злиться", type: "passive", feedback: "Низкая эффективность.", color: "yellow" },
+                    { id: 'C', text: "Заехать на час поздравить и уехать", type: "proactive", feedback: "Баланс и контроль.", color: "green" }
+                ]
+            },
+            // --- НОВЫЕ СЦЕНАРИИ ---
+            {
+                id: 4,
+                title: "Жесткая Критика",
+                context: "Ваш руководитель публично раскритиковал ваш отчет. Вам стыдно и обидно.",
+                image: "🔥",
+                options: [
+                    { id: 'A', text: "Сразу начать спорить и защищаться.", type: "reactive", feedback: "Эскалация конфликта.", color: "red" },
+                    { id: 'B', text: "Молча принять критику, но внутренне решить, что руководитель неправ.", type: "passive", feedback: "Накопление негатива.", color: "yellow" },
+                    { id: 'C', text: "Поблагодарить, а затем попросить 1 на 1 обсудить детали улучшения.", type: "proactive", feedback: "Использование критики для роста.", color: "green" }
+                ]
+            },
+            {
+                id: 5,
+                title: "Коллега в Беде",
+                context: "Коллега, который часто прокрастинирует, просит срочно помочь с его работой, хотя у вас дедлайн.",
+                image: "🤝",
+                options: [
+                    { id: 'A', text: "Сказать 'Это не мои проблемы' и отказаться.", type: "reactive", feedback: "Разрыв отношений.", color: "red" },
+                    { id: 'B', text: "Бросить все и помочь ему, забыв о своем дедлайне.", type: "passive", feedback: "Подрыв своих приоритетов.", color: "yellow" },
+                    { id: 'C', text: "Предложить 15 минут, чтобы вместе составить план приоритизации его задач, а потом вернуться к своей.", type: "proactive", feedback: "Помощь и границы.", color: "green" }
+                ]
+            },
+            {
+                id: 6,
+                title: "Провал Проекта",
+                context: "Проект провалился, и все ищут 'крайнего'. Вы знаете, что допустили мелкую ошибку, которая усугубила проблему.",
+                image: "❌",
+                options: [
+                    { id: 'A', text: "Переложить вину на того, кто допустил самую большую ошибку.", type: "reactive", feedback: "Потеря доверия.", color: "red" },
+                    { id: 'B', text: "Промолчать и надеяться, что никто не заметит ваш вклад.", type: "passive", feedback: "Тайное чувство вины.", color: "yellow" },
+                    { id: 'C', text: "Взять на себя ответственность за свою часть ошибки и предложить план по исправлению.", type: "proactive", feedback: "Проявление лидерства и честности.", color: "green" }
+                ]
+            }
+        ];
+
+        // --- FIREBASE INIT (ВАША КОНФИГУРАЦИЯ) ---
+        // ВАШИ ДАННЫЕ FIREBASE ВСТАВЛЕНЫ НИЖЕ
+        const myFirebaseConfig = {
+            apiKey: "AIzaSyC8oVyi8yR1DHQUzSU7fIkMx0w5_saR2xs",
+            authDomain: "game-5e865.firebaseapp.com",
+            projectId: "game-5e865",
+            storageBucket: "game-5e865.firebasestorage.app",
+            messagingSenderId: "891966924074",
+            appId: "1:891966924074:web:57595104fe79f28902aa53"
+        };
+        const firebaseConfig = myFirebaseConfig;
+        
+        // ВАЖНАЯ ПРОВЕРКА: Инициализация Firebase только один раз
+        if (!firebase.apps.length) {
+            firebase.initializeApp(firebaseConfig);
+        }
+        
+        const auth = firebase.auth();
+        const db = firebase.firestore();
+        const appId = firebaseConfig.projectId; // Используем projectId (game-5e865) как appId для уникальных путей
+        
+        // Переменная, которая может быть определена средой Canvas
+        const __initial_auth_token = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+
+        // --- COMPONENTS ---
+
+        function App() {
+            const [user, setUser] = React.useState(null);
+            const [view, setView] = React.useState('menu'); // menu, host, player
+            const [roomCode, setRoomCode] = React.useState('');
+            const [playerName, setPlayerName] = React.useState('');
+            const [error, setError] = React.useState('');
+
+            // Auth Initialization
+            React.useEffect(() => {
+                const initAuth = async () => {
+                    try {
+                         if (__initial_auth_token) {
+                            // Если токен предоставлен (например, в среде Canvas), используем его
+                            await auth.signInWithCustomToken(__initial_auth_token);
+                         } else {
+                            // Для локального запуска или при отсутствии токена, используем анонимный вход
+                            await auth.signInAnonymously();
+                         }
+                    } catch (e) {
+                        console.error("Auth error", e);
+                        setError("Ошибка авторизации. Попробуйте обновить страницу.");
+                    }
+                };
+                initAuth();
+                const unsubscribe = auth.onAuthStateChanged((u) => setUser(u));
+                return () => unsubscribe();
+            }, []);
+
+            if (!user) return <div className="text-xl animate-pulse text-blue-400">Загрузка системы...</div>;
+
+            // --- NAVIGATION HANDLERS ---
+            
+            const createRoom = async () => {
+                const code = Math.floor(1000 + Math.random() * 9000).toString();
+                
+                try {
+                    // Reference to the room document
+                    // Путь: artifacts/game-5e865/public/data/room_XXXX/status
+                    const roomDocRef = db.collection('artifacts').doc(appId).collection('public').doc('data').collection(`room_${code}`).doc('status');
+                    
+                    await roomDocRef.set({
+                        hostId: user.uid,
+                        status: 'lobby', // lobby, playing, results
+                        currentScenario: 0,
+                        showFeedback: false,
+                        createdAt: Date.now()
+                    });
+                    
+                    setRoomCode(code);
+                    setView('host');
+                } catch (e) {
+                    console.error(e);
+                    setError("Ошибка создания комнаты: " + e.message);
+                }
+            };
+
+            const joinRoom = async () => {
+                if (!roomCode || roomCode.length !== 4) {
+                    setError("Введите 4-значный код");
+                    return;
+                }
+                if (!playerName) {
+                    setError("Введите имя");
+                    return;
+                }
+
+                try {
+                    const roomDocRef = db.collection('artifacts').doc(appId).collection('public').doc('data').collection(`room_${roomCode}`).doc('status');
+                    
+                    // Firestore Compat syntax for getting a document
+                    const roomSnap = await roomDocRef.get();
+                    
+                    if (!roomSnap.exists) {
+                        setError("Комната не найдена");
+                        return;
+                    }
+
+                    // Register player. Collection: artifacts/game-5e865/public/data/room_XXXX_players/{userId}
+                    const playerRef = db.collection('artifacts').doc(appId).collection('public').doc('data').collection(`room_${roomCode}_players`).doc(user.uid);
+                    
+                    await playerRef.set({
+                        name: playerName,
+                        score: 0,
+                        joinedAt: Date.now()
+                    });
+
+                    setView('player');
+                } catch (e) {
+                    console.error(e);
+                    setError("Ошибка подключения: " + e.message);
+                }
+            };
+
+            // --- RENDER VIEWS ---
+
+            if (view === 'menu') {
+                return (
+                    <div className="max-w-md w-full space-y-8 text-center fade-in">
+                        <h1 className="text-5xl font-black bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-purple-500">
+                            EQ Simulator
+                        </h1>
+                        <p className="text-gray-400">Мультиплеер версия. User ID: <span className="text-xs text-slate-500">{user.uid}</span></p>
+                        
+                        <div className="bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-xl space-y-4">
+                            <h2 className="text-xl font-bold text-white">Для Ведущего</h2>
+                            <button onClick={createRoom} className="w-full py-3 bg-blue-600 hover:bg-blue-500 rounded-lg font-bold transition">
+                                Создать Комнату
+                            </button>
+                        </div>
+
+                        <div className="relative flex py-2 items-center">
+                            <div className="flex-grow border-t border-slate-700"></div>
+                            <span className="flex-shrink mx-4 text-gray-500">ИЛИ</span>
+                            <div className="flex-grow border-t border-slate-700"></div>
+                        </div>
+
+                        <div className="bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-xl space-y-4">
+                            <h2 className="text-xl font-bold text-white">Для Студента</h2>
+                            <input 
+                                type="text" 
+                                placeholder="Ваше Имя"
+                                className="w-full p-3 bg-slate-900 rounded border border-slate-600 focus:border-blue-500 outline-none text-white"
+                                value={playerName}
+                                onChange={e => setPlayerName(e.target.value)}
+                            />
+                            <input 
+                                type="number" 
+                                placeholder="Код Комнаты (4 цифры)"
+                                className="w-full p-3 bg-slate-900 rounded border border-slate-600 focus:border-blue-500 outline-none text-white tracking-widest text-center font-mono text-xl"
+                                value={roomCode}
+                                onChange={e => setRoomCode(e.target.value)}
+                            />
+                            {error && <p className="text-red-400 text-sm">{error}</p>}
+                            <button onClick={joinRoom} className="w-full py-3 bg-green-600 hover:bg-green-500 rounded-lg font-bold transition">
+                                Присоединиться
+                            </button>
+                        </div>
+                    </div>
+                );
+            }
+
+            if (view === 'host') {
+                return <HostView roomCode={roomCode} user={user} db={db} appId={appId} />;
+            }
+
+            if (view === 'player') {
+                return <PlayerView roomCode={roomCode} user={user} db={db} appId={appId} />;
+            }
+
+            return null;
+        }
+
+        // --- HOST VIEW ---
+
+        function HostView({ roomCode, user, db, appId }) {
+            const [roomData, setRoomData] = React.useState(null);
+            const [players, setPlayers] = React.useState([]);
+
+            // Listen to room state
+            React.useEffect(() => {
+                const roomDocRef = db.collection('artifacts').doc(appId).collection('public').doc('data').collection(`room_${roomCode}`).doc('status');
+                
+                // ВАЖНО: Добавьте appId и db в зависимости, чтобы избежать ошибок eslint (хотя в Canvas это часто не критично)
+                const unsubRoom = roomDocRef.onSnapshot((doc) => {
+                    setRoomData(doc.data());
+                }, (err) => console.error("Room sync error", err));
+
+                // Listen to players
+                const playersColRef = db.collection('artifacts').doc(appId).collection('public').doc('data').collection(`room_${roomCode}_players`);
+                
+                // ВАЖНО: Добавьте appId и db в зависимости
+                const unsubPlayers = playersColRef.onSnapshot((snapshot) => {
+                    const pList = [];
+                    snapshot.forEach(doc => pList.push({ id: doc.id, ...doc.data() }));
+                    setPlayers(pList);
+                }, (err) => console.error("Players sync error", err));
+
+                return () => { unsubRoom(); unsubPlayers(); };
+            }, [roomCode, appId, db]); // Добавил зависимости
+
+            const nextStep = async () => {
+                if (!roomData) return;
+                const roomDocRef = db.collection('artifacts').doc(appId).collection('public').doc('data').collection(`room_${roomCode}`).doc('status');
+                
+                if (roomData.status === 'lobby') {
+                    await roomDocRef.update({ status: 'playing', currentScenario: 0, showFeedback: false });
+                } else if (roomData.showFeedback) {
+                    // Move to next question or end
+                    if (roomData.currentScenario < scenarios.length - 1) {
+                        await roomDocRef.update({ 
+                            currentScenario: roomData.currentScenario + 1, 
+                            showFeedback: false,
+                        });
+                    } else {
+                        await roomDocRef.update({ status: 'end' });
+                    }
+                } else {
+                    // Show feedback for current question
+                    await roomDocRef.update({ showFeedback: true });
+                }
+            };
+
+            if (!roomData) return <div className="text-center text-xl mt-10">Загрузка комнаты...</div>;
+
+            // Lobby State
+            if (roomData.status === 'lobby') {
+                return (
+                    <div className="max-w-4xl w-full text-center fade-in">
+                        <div className="mb-8">
+                            <h2 className="text-gray-400 uppercase tracking-widest text-sm mb-2">Код для входа</h2>
+                            <div className="text-8xl font-black text-white font-mono tracking-widest bg-slate-800 inline-block px-8 py-4 rounded-2xl border-2 border-slate-600 shadow-2xl">
+                                {roomCode}
+                            </div>
+                            <p className="text-sm text-gray-500 mt-2">ID Ведущего: {user.uid}</p>
+                        </div>
+
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+                            {players.map(p => (
+                                <div key={p.id} className="bg-slate-800 p-3 rounded-lg border border-slate-700 animate-pulse">
+                                    👤 {p.name}
+                                </div>
+                            ))}
+                            {players.length === 0 && <div className="col-span-4 text-gray-500 italic">Ожидание игроков...</div>}
+                        </div>
+
+                        <div className="fixed bottom-8 left-0 right-0 flex justify-center">
+                            <button 
+                                onClick={nextStep}
+                                className="bg-blue-600 hover:bg-blue-500 text-white px-12 py-4 rounded-full text-2xl font-bold shadow-lg transition transform hover:scale-105"
+                                disabled={players.length === 0}
+                            >
+                                Начать Игру ({players.length} чел.)
+                            </button>
+                        </div>
+                    </div>
+                );
+            }
+
+            // End State
+            if (roomData.status === 'end') {
+                return (
+                    <div className="max-w-2xl w-full text-center fade-in">
+                        <h1 className="text-4xl font-bold mb-8">🎉 Игра Завершена!</h1>
+                        <div className="bg-slate-800 rounded-xl overflow-hidden border border-slate-700">
+                            <table className="w-full text-left">
+                                <thead className="bg-slate-900 text-slate-400">
+                                    <tr>
+                                        <th className="p-4">Игрок</th>
+                                        <th className="p-4 text-right">EQ Score</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {players.sort((a,b) => (b.score || 0) - (a.score || 0)).map((p, i) => (
+                                        <tr key={p.id} className="border-t border-slate-700">
+                                            <td className="p-4 flex items-center gap-2">
+                                                <span className="text-gray-500 w-6">#{i+1}</span>
+                                                {p.name}
+                                            </td>
+                                            <td className="p-4 text-right font-bold text-green-400">{p.score || 0}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                );
+            }
+
+            // Game State
+            const scenario = scenarios[roomData.currentScenario];
+            const currentAnswers = players.filter(p => p[`answer_${roomData.currentScenario}`]);
+            
+            // Calculate stats
+            const stats = { A: 0, B: 0, C: 0 };
+            currentAnswers.forEach(p => {
+                const ans = p[`answer_${roomData.currentScenario}`];
+                if(stats[ans] !== undefined) stats[ans]++;
+            });
+            const total = currentAnswers.length || 1; // avoid div by zero
+
+            return (
+                <div className="w-full max-w-6xl grid grid-cols-1 lg:grid-cols-3 gap-6 p-4 h-screen max-h-[900px]">
+                    {/* Left: Scenario */}
+                    <div className="lg:col-span-2 bg-slate-800 p-8 rounded-2xl border border-slate-700 flex flex-col justify-center relative">
+                        <div className="absolute top-4 right-4 text-6xl opacity-20">{scenario.image}</div>
+                        <h2 className="text-3xl font-bold mb-6 text-blue-300">Ситуация {roomData.currentScenario + 1}</h2>
+                        <p className="text-2xl leading-relaxed mb-8">{scenario.context}</p>
+                        
+                        <div className="grid gap-4">
+                            {scenario.options.map(opt => {
+                                const count = stats[opt.id];
+                                const percent = Math.round((count / total) * 100);
+                                const isCorrect = opt.type === 'proactive';
+
+                                return (
+                                    <div key={opt.id} className={`relative p-6 rounded-xl border-2 transition-all ${
+                                        roomData.showFeedback 
+                                            ? (isCorrect ? 'border-green-500 bg-green-900/20' : 'border-slate-700 opacity-50')
+                                            : 'border-slate-600 bg-slate-700/50'
+                                    }`}>
+                                        <div className="flex justify-between items-center z-10 relative">
+                                            <span className="font-bold text-xl mr-4">{opt.id}. {opt.text}</span>
+                                            {roomData.showFeedback && <span className="text-2xl font-bold">{count}</span>}
+                                        </div>
+                                        
+                                        {/* Progress Bar background */}
+                                        {roomData.showFeedback && (
+                                            <div className="absolute left-0 top-0 bottom-0 bg-white/10 transition-all duration-1000" style={{width: `${percent}%`}}></div>
+                                        )}
+                                        
+                                        {roomData.showFeedback && isCorrect && (
+                                            <div className="mt-2 text-green-400 font-bold">✨ Лучший выбор: {opt.feedback}</div>
+                                        )}
+                                         {roomData.showFeedback && !isCorrect && opt.id === 'A' && ( 
+                                            <div className="mt-2 text-red-400 text-sm">{opt.feedback}</div>
+                                        )}
+                                         {roomData.showFeedback && !isCorrect && opt.id === 'B' && (
+                                            <div className="mt-2 text-yellow-400 text-sm">{opt.feedback}</div>
+                                        )}
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+
+                    {/* Right: Controls & Players */}
+                    <div className="flex flex-col gap-4">
+                        <div className="bg-slate-900 p-6 rounded-2xl border border-slate-800 flex-grow overflow-y-auto">
+                            <h3 className="text-gray-400 mb-4 font-bold uppercase text-sm">Ответили: {currentAnswers.length}/{players.length}</h3>
+                            <div className="flex flex-wrap gap-2">
+                                {players.map(p => {
+                                    const hasAnswered = p[`answer_${roomData.currentScenario}`];
+                                    return (
+                                        <span key={p.id} className={`px-3 py-1 rounded-full text-sm ${hasAnswered ? 'bg-blue-600 text-white' : 'bg-slate-800 text-gray-500 border border-slate-700'}`}>
+                                            {p.name} {hasAnswered && '✓'}
+                                        </span>
+                                    );
+                                })}
+                            </div>
+                        </div>
+
+                        <button 
+                            onClick={nextStep}
+                            className="w-full py-6 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-2xl text-xl shadow-lg transition"
+                        >
+                            {roomData.showFeedback 
+                                ? (roomData.currentScenario < scenarios.length - 1 ? "Следующая Ситуация ->" : "Завершить Игру") 
+                                : "Показать Результаты"}
+                        </button>
+                    </div>
+                </div>
+            );
+        }
+
+        // --- PLAYER VIEW ---
+
+        function PlayerView({ roomCode, user, db, appId }) {
+            const [roomData, setRoomData] = React.useState(null);
+            const [hasAnswered, setHasAnswered] = React.useState(false);
+
+            React.useEffect(() => {
+                const roomDocRef = db.collection('artifacts').doc(appId).collection('public').doc('data').collection(`room_${roomCode}`).doc('status');
+                
+                // ВАЖНО: Добавьте roomCode, appId, db в зависимости
+                const unsub = roomDocRef.onSnapshot((doc) => {
+                    if (doc.exists) {
+                        setRoomData(doc.data());
+                    }
+                });
+                return () => unsub();
+            }, [roomCode, appId, db]);
+
+            // Check if we already answered this specific scenario
+            React.useEffect(() => {
+                if (!roomData || !user) return;
+                const checkAnswer = async () => {
+                    const playerRef = db.collection('artifacts').doc(appId).collection('public').doc('data').collection(`room_${roomCode}_players`).doc(user.uid);
+                    
+                    const snap = await playerRef.get();
+                    if (snap.exists) {
+                        const data = snap.data();
+                        // Установка hasAnswered в зависимости от того, есть ли ответ на текущий сценарий
+                        setHasAnswered(!!data[`answer_${roomData.currentScenario}`]);
+                    }
+                };
+                checkAnswer();
+            }, [roomData?.currentScenario, user?.uid, roomCode, appId, db]); // Добавил зависимости
+
+
+            const submitAnswer = async (optionId, type) => {
+                if (hasAnswered) return;
+                
+                // Начисляем баллы: Проактивный (10), Пассивный (0), Реактивный (-5)
+                const points = type === 'proactive' ? 10 : type === 'passive' ? 0 : -5;
+                const playerRef = db.collection('artifacts').doc(appId).collection('public').doc('data').collection(`room_${roomCode}_players`).doc(user.uid);
+
+                // Используем FieldValue.increment для атомарного обновления счета
+                // ВАЖНО: FieldValue доступно через firebase.firestore.FieldValue
+                await playerRef.update({
+                    [`answer_${roomData.currentScenario}`]: optionId,
+                    score: firebase.firestore.FieldValue.increment(points)
+                });
+                setHasAnswered(true);
+            };
+
+            if (!roomData) return <div className="p-10 text-center">Подключение к комнате...</div>;
+
+            if (roomData.status === 'lobby') {
+                return (
+                    <div className="text-center p-8 max-w-md w-full">
+                        <div className="w-20 h-20 bg-blue-600 rounded-full mx-auto mb-6 flex items-center justify-center pulse-ring">
+                            <span className="text-3xl">⏳</span>
+                        </div>
+                        <h2 className="text-2xl font-bold mb-2">Ожидаем ведущего...</h2>
+                        <p className="text-gray-400">Смотрите на большой экран.</p>
+                        <div className="mt-8 p-4 bg-slate-800 rounded-lg">
+                            Ваше имя: <span className="font-bold text-white">{user.displayName || "Студент"}</span>
+                        </div>
+                    </div>
+                );
+            }
+
+            if (roomData.status === 'end') {
+                return (
+                    <div className="text-center p-8 max-w-md w-full">
+                        <h2 className="text-3xl font-bold mb-4">Игра Окончена!</h2>
+                        <p>Посмотрите на экран ведущего, чтобы узнать результаты.</p>
+                    </div>
+                );
+            }
+
+            const scenario = scenarios[roomData.currentScenario];
+
+            if (roomData.showFeedback) {
+                return (
+                    <div className="text-center p-8 max-w-md w-full">
+                        <div className="mb-6">
+                            {hasAnswered ? <div className="text-6xl mb-4 text-green-400">👀</div> : <div className="text-6xl mb-4 text-gray-500">😴</div>}
+                            <h2 className="text-2xl font-bold">Смотрим результаты!</h2>
+                            <p className="text-gray-400 mt-2">Внимание на главный экран</p>
+                        </div>
+                        <div className="p-4 bg-slate-800 rounded-xl border border-slate-700 animate-pulse">
+                            Ожидание следующего вопроса...
+                        </div>
+                    </div>
+                );
+            }
+
+            return (
+                <div className="w-full max-w-md p-4 space-y-4">
+                    <div className="bg-slate-800 p-4 rounded-xl border-l-4 border-blue-500 mb-4">
+                        <h3 className="text-gray-400 text-xs uppercase tracking-widest mb-1">Ситуация {roomData.currentScenario + 1}</h3>
+                        <p className="font-bold text-lg">{scenario.title}</p>
+                        <p className="text-sm text-gray-300 mt-2">{scenario.context}</p>
+                    </div>
+
+                    <div className="space-y-3">
+                        {hasAnswered ? (
+                             <div className="text-center py-10">
+                                <div className="text-green-500 text-5xl mb-4">✓</div>
+                                <h3 className="text-xl font-bold">Ответ принят</h3>
+                                <p className="text-gray-400">Ждем остальных...</p>
+                             </div>
+                        ) : (
+                            scenario.options.map(opt => (
+                                <button
+                                    key={opt.id}
+                                    onClick={() => submitAnswer(opt.id, opt.type)}
+                                    className="w-full text-left p-6 bg-slate-700 hover:bg-blue-600 active:bg-blue-700 rounded-xl border-2 border-slate-600 transition-all transform active:scale-95 group"
+                                >
+                                    <div className="flex items-center gap-4">
+                                        <div className="w-10 h-10 rounded-full bg-slate-800 flex items-center justify-center font-bold text-lg group-hover:bg-white group-hover:text-blue-600 transition-colors">
+                                            {opt.id}
+                                        </div>
+                                        <div className="text-lg font-medium">{opt.text}</div>
+                                    </div>
+                                </button>
+                            ))
+                        )}
+                    </div>
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
