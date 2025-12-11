@@ -124,6 +124,10 @@
             <div id="total-count" class="text-center text-sm font-semibold text-gray-600">
                 Всего слов: 0
             </div>
+            <!-- NEW: Clear Cloud Button -->
+            <button id="clear-cloud-button" class="w-full mt-4 py-3 bg-red-500 text-white font-bold rounded-lg shadow-lg hover:bg-red-600 transition duration-150 transform hover:scale-[1.01] active:scale-[0.99]">
+                Очистить Облако Слов
+            </button>
         </div>
         
         <!-- Status and Error Message -->
@@ -138,7 +142,7 @@
         // Firebase Imports
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, onSnapshot, collection, query, where, getDocs, serverTimestamp, addDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getFirestore, onSnapshot, collection, query, serverTimestamp, addDoc, getDocs, deleteDoc, writeBatch } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         
         // --- Global Variables and Constants ---
         
@@ -175,6 +179,8 @@
         const speakerPasswordInput = document.getElementById('speaker-password-input');
         const loginButton = document.getElementById('login-button');
         const loginError = document.getElementById('login-error');
+        // NEW UI Element for Clear Button
+        const clearCloudButton = document.getElementById('clear-cloud-button');
         
         // App State
         let db, auth;
@@ -288,6 +294,51 @@
             } catch (error) {
                 console.error("Error writing document: ", error);
                 statusMessage.textContent = 'Ошибка записи в БД. См. консоль.';
+            }
+        }
+
+        /**
+         * Deletes all documents in the 'keywords' collection.
+         */
+        async function clearWordCloudData() {
+            if (!isSpeakerMode || !db) return;
+
+            statusMessage.textContent = 'Подготовка к очистке данных...';
+            console.log("Attempting to clear word cloud data...");
+
+            const collectionRef = collection(db, getCollectionPath());
+
+            try {
+                // 1. Fetch all documents in the collection
+                const snapshot = await getDocs(collectionRef);
+                
+                if (snapshot.empty) {
+                    statusMessage.textContent = 'Облако уже пусто.';
+                    console.log("Collection is already empty.");
+                    setTimeout(() => statusMessage.textContent = 'Подключено.', 3000);
+                    return;
+                }
+
+                // 2. Create a batch operation for efficient deletion
+                const batch = writeBatch(db);
+
+                // 3. Add delete operations to the batch
+                snapshot.forEach((doc) => {
+                    batch.delete(doc.ref);
+                });
+
+                // 4. Commit the batch
+                await batch.commit();
+
+                statusMessage.textContent = `Успешно удалено ${snapshot.size} слов. Облако очищено!`;
+                console.log(`Successfully deleted ${snapshot.size} documents.`);
+                // Reset status message after a short delay
+                setTimeout(() => statusMessage.textContent = 'Подключено.', 3000);
+
+
+            } catch (error) {
+                console.error("Error clearing word cloud data: ", error);
+                statusMessage.textContent = 'Ошибка очистки данных. См. консоль.';
             }
         }
 
@@ -460,6 +511,9 @@
                 submitKeyword();
             }
         });
+
+        // NEW Event Listener for Clear Button
+        clearCloudButton.addEventListener('click', clearWordCloudData);
         
         // Initialize Firebase and start the app
         window.onload = initFirebase;
