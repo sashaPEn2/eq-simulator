@@ -1,0 +1,481 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Динамическое облако слов</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Custom font scaling for the word cloud */
+        .word-cloud-container {
+            min-height: 450px; /* Adjusted height for better visual space */
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: center;
+            gap: 0.75rem; /* Increased gap */
+            padding: 2rem; /* Increased padding */
+            
+            /* --- Cloud-like styling: Highly rounded and soft --- */
+            border-radius: 3.5rem; /* Large, uniform radius for primary shape */
+            background-color: #ffffff;
+            
+            /* Enhanced box shadow for Puffy Look and Outline */
+            box-shadow: 
+                /* Subtle, soft inner shadow for depth */
+                inset 0 0 15px rgba(0, 0, 0, 0.05),
+                /* Outer outline (Light blue - #93c5fd) */
+                0 0 0 4px #93c5fd, 
+                /* Floating effect (Main strong shadow) */
+                0 15px 30px rgba(0, 0, 0, 0.15); 
+            
+            /* Increased transition speed */
+            transition: all 0.4s ease-in-out;
+        }
+        .word-item {
+            display: inline-block;
+            transition: all 0.3s ease;
+            font-weight: 700;
+            cursor: default;
+            line-height: 1.2;
+            padding: 0.35rem 0.65rem; /* slightly larger padding */
+            border-radius: 9999px; /* full pill shape for 'bubble' effect */
+            color: #1f2937; /* gray-800 */
+            background-color: rgba(255, 255, 255, 0.9); /* Slightly visible background for the pill */
+            /* Add subtle 3D/bubble effect */
+            box-shadow: 1px 2px 3px rgba(0, 0, 0, 0.2); 
+            text-shadow: none; 
+        }
+        /* Color variations for better visual appeal */
+        .color-1 { color: #059669; } /* emerald darker */
+        .color-2 { color: #2563eb; } /* blue darker */
+        .color-3 { color: #ea580c; } /* orange darker */
+        .color-4 { color: #4f46e5; } /* indigo darker */
+        
+        /* Modal backdrop styling (Kept for potential reuse, but modal HTML removed) */
+        .modal-backdrop {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 50;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 flex items-center justify-center min-h-screen p-4 font-sans">
+
+    <div class="w-full max-w-xl bg-white shadow-2xl rounded-xl p-6 space-y-6">
+        <header class="text-center">
+            <h1 class="text-3xl font-extrabold text-gray-800">СНО ФЭМ. Облако ключевых слов</h1>
+            <p id="app-description" class="text-gray-500 mt-2">
+                Соберите ассоциации и вопросы в реальном времени.
+            </p>
+        </header>
+
+        <!-- Mode Toggle, User ID Display, and Speaker Login Area -->
+        <div class="flex flex-col sm:flex-row justify-between items-center space-y-4 sm:space-y-0 relative">
+            <!-- User ID Display (Order 2 on mobile, 1 on desktop) -->
+            <p class="text-sm text-gray-600 truncate order-2 sm:order-1">Ваш ID: <span id="user-id-display" class="font-mono text-gray-800">Загрузка...</span></p>
+
+            <!-- Toggle Button (Less noticeable) -->
+            <div class="order-1 sm:order-2 flex space-x-3">
+                <button id="mode-toggle" class="text-sm text-gray-500 hover:text-gray-700 transition duration-150 underline">
+                    Переключить режим
+                </button>
+                <!-- Настройки (Firebase) удалены по запросу -->
+            </div>
+        </div>
+        
+        <!-- Speaker Login Area (Hidden by default, shown when switching from Voter to Speaker) -->
+        <div id="speaker-login-area" class="bg-gray-50 p-4 rounded-lg shadow-inner space-y-2 hidden">
+            <h3 class="text-lg font-semibold text-center text-gray-700">Вход для Спикера</h3>
+            <input type="password" id="speaker-password-input" placeholder="Введите пароль"
+                   class="w-full p-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500">
+            <button id="login-button" class="w-full py-2 bg-indigo-500 text-white font-semibold rounded-lg hover:bg-indigo-600 transition duration-150">
+                Войти
+            </button>
+            <p id="login-error" class="text-sm text-red-500 text-center hidden">Неверный пароль.</p>
+        </div>
+
+
+        <!-- Keyword Submission Area (Voter Mode) -->
+        <div id="voter-area" class="space-y-4 hidden">
+            <input type="text" id="keyword-input" placeholder="Введите ключевое слово или вопрос (до 30 символов)" maxlength="30"
+                   class="w-full p-3 border-2 border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 transition duration-150">
+            <button id="submit-keyword" class="w-full py-3 bg-green-500 text-white font-bold rounded-lg shadow-lg hover:bg-green-600 transition duration-150 transform hover:scale-[1.01] active:scale-[0.99]">
+                Отправить слово
+            </button>
+            <p id="voter-status" class="text-center text-sm text-gray-500 mt-2">
+                Последнее слово: <span id="last-keyword" class="font-semibold text-gray-700">Нет данных</span>
+            </p>
+        </div>
+
+        <!-- Word Cloud Visualization Area (Speaker Mode) -->
+        <div id="speaker-area" class="space-y-4 hidden">
+            <div id="word-cloud" class="word-cloud-container">
+                <p class="text-gray-400">Ожидание первых слов...</p>
+            </div>
+            <div id="total-count" class="text-center text-sm font-semibold text-gray-600">
+                Всего слов: 0
+            </div>
+        </div>
+        
+        <!-- Status and Error Message -->
+        <div id="status-message" class="text-center text-sm text-gray-500">
+            Инициализация...
+        </div>
+    </div>
+    
+    <!-- Firebase Configuration Modal удален по запросу -->
+
+    <script type="module">
+        // Firebase Imports
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, onSnapshot, collection, query, where, getDocs, serverTimestamp, addDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        
+        // --- Global Variables and Constants ---
+        
+        // Используем собственный жестко заданный ID, чтобы избежать зависимости от переменной среды.
+        const appId = 'custom-word-cloud-app-id'; 
+        
+        // Speaker Password Constant
+        const SPEAKER_PASSWORD = 'sno_fem2025';
+
+        // --- Firebase Configuration (Hardcoded) ---
+        // Конфигурация Firebase, предоставленная пользователем.
+        const FIREBASE_CONFIG = {
+            apiKey: "AIzaSyC8oVyi8yR1DHQUzSU7fIkMx0w5_saR2xs",
+            authDomain: "game-5e865.firebaseapp.com",
+            projectId: "game-5e865",
+            storageBucket: "game-5e865.firebasestorage.app",
+            messagingSenderId: "891966924074",
+            appId: "1:891966924074:web:57595104fe79f28902aa53"
+        };
+        
+        // UI Elements
+        const modeToggle = document.getElementById('mode-toggle');
+        const userIdDisplay = document.getElementById('user-id-display');
+        const statusMessage = document.getElementById('status-message');
+        const voterArea = document.getElementById('voter-area');
+        const speakerArea = document.getElementById('speaker-area');
+        const keywordInput = document.getElementById('keyword-input');
+        const submitKeywordButton = document.getElementById('submit-keyword');
+        const lastKeywordDisplay = document.getElementById('last-keyword');
+        const wordCloudContainer = document.getElementById('word-cloud');
+        const totalCountDisplay = document.getElementById('total-count');
+        const appDescription = document.getElementById('app-description');
+        const speakerLoginArea = document.getElementById('speaker-login-area');
+        const speakerPasswordInput = document.getElementById('speaker-password-input');
+        const loginButton = document.getElementById('login-button');
+        const loginError = document.getElementById('login-error');
+        
+        // App State
+        let db, auth;
+        let userId = 'loading...';
+        let isSpeakerMode = false;
+        let isAuthReady = false;
+        let unsubscribeListener = null;
+
+        // --- Firebase Initialization and Auth ---
+        
+        async function initFirebase() {
+            const firebaseConfig = FIREBASE_CONFIG; // Используем жестко заданную конфигурацию
+
+            if (!firebaseConfig || !firebaseConfig.apiKey) {
+                statusMessage.textContent = 'Критическая ошибка: Конфигурация Firebase отсутствует.';
+                console.error("Critical Error: Hardcoded Firebase config is missing.");
+                isAuthReady = true;
+                return;
+            }
+
+            try {
+                const app = initializeApp(firebaseConfig);
+                db = getFirestore(app);
+                auth = getAuth(app);
+                
+                await new Promise((resolve) => {
+                    // Используем onAuthStateChanged, чтобы дождаться начального состояния аутентификации.
+                    onAuthStateChanged(auth, async (user) => {
+                        if (user) {
+                            userId = user.uid;
+                        } else {
+                            // Принудительный анонимный вход
+                            try {
+                                await signInAnonymously(auth);
+                                userId = auth.currentUser.uid;
+                            } catch (e) {
+                                console.error("Firebase Auth failed (Anonymous sign-in):", e);
+                                userId = crypto.randomUUID(); // Fallback ID if anonymous fails
+                            }
+                        }
+                        userIdDisplay.textContent = userId;
+                        isAuthReady = true;
+                        statusMessage.textContent = 'Подключено.';
+                        resolve();
+                    });
+                });
+
+                // Start UI based on default mode
+                updateUI();
+                
+            } catch (e) {
+                statusMessage.textContent = 'Ошибка инициализации Firebase. Убедитесь, что конфигурация верна. См. консоль.';
+                console.error("Firebase initialization failed:", e);
+                isAuthReady = true;
+            }
+        }
+
+        /**
+         * Returns the path for the public 'keywords' collection.
+         */
+        function getCollectionPath() {
+            // Использует жестко заданный appId, который не зависит от переменных среды.
+            return `artifacts/${appId}/public/data/keywords`;
+        }
+
+        /**
+         * Submits a single keyword vote to Firestore, preventing duplicates per user.
+         */
+        async function submitKeyword() {
+            if (!isAuthReady || !db || isSpeakerMode) {
+                 if (!db) {
+                    statusMessage.textContent = 'Ошибка: БД не подключена. Проверьте конфигурацию.';
+                    setTimeout(() => statusMessage.textContent = 'Инициализация...', 3000);
+                 }
+                 return;
+            }
+
+            const rawKeyword = keywordInput.value.trim();
+            if (!rawKeyword) {
+                // Use a custom UI element or console log instead of alert
+                statusMessage.textContent = 'Пожалуйста, введите слово перед отправкой.';
+                setTimeout(() => statusMessage.textContent = 'Подключено.', 3000);
+                return;
+            }
+
+            // Normalize and sanitize the keyword
+            // Converts to lowercase and removes non-alphanumeric/non-space characters
+            const keyword = rawKeyword.toLowerCase().replace(/[^а-яa-z0-9\s]/g, '').trim();
+            if (!keyword) {
+                statusMessage.textContent = 'Недопустимое слово.';
+                setTimeout(() => statusMessage.textContent = 'Подключено.', 3000);
+                return;
+            }
+
+            const collectionRef = collection(db, getCollectionPath());
+            
+            try {
+                // Check for existing submission by this user for this keyword
+                const checkQuery = query(
+                    collectionRef, 
+                    where('userId', '==', userId), 
+                    where('keyword', '==', keyword)
+                );
+                
+                // Using getDocs to fetch documents that match the criteria
+                const existingDocs = await getDocs(checkQuery);
+
+                if (!existingDocs.empty) {
+                    statusMessage.textContent = `Вы уже отправляли слово "${rawKeyword}". Попробуйте другое.`;
+                    setTimeout(() => statusMessage.textContent = 'Подключено.', 5000);
+                    keywordInput.value = '';
+                    return; // Block submission
+                }
+
+                // If no existing submission found, proceed to add the document
+                await addDoc(collectionRef, { 
+                    userId: userId,
+                    keyword: keyword,
+                    originalText: rawKeyword, // Keep original text for display
+                    timestamp: serverTimestamp()
+                });
+                
+                lastKeywordDisplay.textContent = rawKeyword;
+                keywordInput.value = '';
+                statusMessage.textContent = `Слово "${rawKeyword}" добавлено в облако!`; // Updated message
+            } catch (error) {
+                console.error("Error writing document or checking existence: ", error);
+                // Note: Firestore might require an index for this query (userId + keyword).
+                statusMessage.textContent = 'Ошибка (Возможно, отсутствует индекс). См. консоль.';
+            }
+        }
+
+        // --- Speaker Mode Logic (Aggregation and Visualization) ---
+        
+        /**
+         * Sets up the real-time listener for all keywords.
+         */
+        function setupRealtimeListener() {
+            if (!isAuthReady || !db || !isSpeakerMode) return;
+
+            // Clear previous listener if exists
+            if (typeof unsubscribeListener === 'function') {
+                unsubscribeListener();
+            }
+
+            const q = query(collection(db, getCollectionPath()));
+            
+            // onSnapshot listens for real-time updates
+            unsubscribeListener = onSnapshot(q, (snapshot) => {
+                const keywordCounts = {};
+                let totalVotes = 0;
+
+                snapshot.forEach((doc) => {
+                    const data = doc.data();
+                    if (data.keyword) {
+                        const keyword = data.keyword;
+                        // Count frequency of each normalized keyword
+                        keywordCounts[keyword] = (keywordCounts[keyword] || 0) + 1;
+                        totalVotes++;
+                    }
+                });
+
+                totalCountDisplay.textContent = `Всего слов: ${totalVotes}`;
+                
+                renderWordCloud(keywordCounts, totalVotes);
+
+            }, (error) => {
+                console.error("Firestore snapshot error: ", error);
+                statusMessage.textContent = 'Ошибка получения данных в реальном времени. См. консоль.';
+            });
+        }
+
+        /**
+         * Renders the word cloud based on frequency counts.
+         * @param {object} counts - Map of keyword to count.
+         * @param {number} totalVotes - Total number of votes submitted.
+         */
+        function renderWordCloud(counts, totalVotes) {
+            wordCloudContainer.innerHTML = '';
+
+            const keywords = Object.keys(counts);
+            if (keywords.length === 0) {
+                wordCloudContainer.innerHTML = '<p class="text-gray-400">Ожидание первых слов...</p>';
+                return;
+            }
+
+            // Determine min/max count for scaling
+            const maxCount = Math.max(...Object.values(counts));
+            const minCount = Math.min(...Object.values(counts));
+            
+            // Define font size range (e.g., 1rem to 3.5rem)
+            const minSize = 1.0;
+            const maxSize = 3.5;
+            const sizeRange = maxSize - minSize;
+
+            keywords.sort((a, b) => counts[b] - counts[a]).forEach((keyword, index) => {
+                const count = counts[keyword];
+                
+                // Calculate size based on count (logarithmic or linear scaling)
+                let scaleFactor = 0;
+                if (maxCount === minCount) {
+                    scaleFactor = 0.5; // Default middle size if all counts are equal
+                } else {
+                    // Linear scaling: (count - min) / (max - min)
+                    scaleFactor = (count - minCount) / (maxCount - minCount);
+                }
+
+                const fontSize = minSize + scaleFactor * sizeRange;
+                
+                const wordElement = document.createElement('span');
+                wordElement.textContent = keyword.toUpperCase(); // Display in uppercase for visual impact
+                wordElement.classList.add('word-item');
+                
+                // Cycle through colors
+                const colorClass = `color-${(index % 4) + 1}`;
+                wordElement.classList.add(colorClass);
+
+                wordElement.style.fontSize = `${fontSize}rem`;
+                wordElement.title = `Количество: ${count}`; // Tooltip
+                
+                wordCloudContainer.appendChild(wordElement);
+            });
+        }
+
+        // --- UI Update and Mode Logic ---
+
+        function updateUI() {
+            if (isSpeakerMode) {
+                // Speaker Mode
+                modeToggle.textContent = 'Переключиться в режим Участника';
+                modeToggle.classList.remove('underline');
+                appDescription.textContent = 'Облако слов в реальном времени. (Режим Спикера)';
+                voterArea.classList.add('hidden');
+                speakerArea.classList.remove('hidden');
+                speakerLoginArea.classList.add('hidden'); // Hide login area
+                setupRealtimeListener();
+            } else {
+                // Voter Mode
+                modeToggle.textContent = 'Переключиться в режим Спикера';
+                modeToggle.classList.add('underline');
+                appDescription.textContent = 'Отправьте свое ключевое слово.';
+                speakerArea.classList.add('hidden');
+                voterArea.classList.remove('hidden');
+                speakerLoginArea.classList.add('hidden'); // Hide login area
+                
+                // Stop listening for all votes when in voter mode
+                if (typeof unsubscribeListener === 'function') {
+                    unsubscribeListener();
+                    unsubscribeListener = null;
+                }
+            }
+        }
+        
+        /**
+         * Handles the login attempt for Speaker Mode.
+         */
+        function handleSpeakerLogin() {
+            if (speakerPasswordInput.value === SPEAKER_PASSWORD) {
+                loginError.classList.add('hidden');
+                isSpeakerMode = true;
+                speakerPasswordInput.value = ''; // Clear password
+                updateUI();
+            } else {
+                loginError.textContent = 'Неверный пароль.';
+                loginError.classList.remove('hidden');
+                speakerPasswordInput.value = '';
+            }
+        }
+        
+        // --- Main Event Listeners ---
+        
+        modeToggle.addEventListener('click', () => {
+            if (isSpeakerMode) {
+                // If currently in Speaker mode, switch back to Voter mode without password
+                isSpeakerMode = false;
+                updateUI();
+            } else {
+                // If currently in Voter mode, show the login form
+                voterArea.classList.add('hidden'); // Hide voter input while logging in
+                speakerArea.classList.add('hidden');
+                speakerLoginArea.classList.remove('hidden');
+                loginError.classList.add('hidden');
+            }
+        });
+
+        loginButton.addEventListener('click', handleSpeakerLogin);
+        speakerPasswordInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                handleSpeakerLogin();
+            }
+        });
+        
+        submitKeywordButton.addEventListener('click', submitKeyword);
+        keywordInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                submitKeyword();
+            }
+        });
+        
+        // Initialize Firebase and start the app
+        window.onload = initFirebase;
+    </script>
+</body>
+</html>
