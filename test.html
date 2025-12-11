@@ -21,6 +21,11 @@
             border-radius: 3.5rem; /* Large, uniform radius for primary shape */
             background-color: #ffffff;
             
+            /* NEW: Watermark positioning setup */
+            position: relative; 
+            overflow: hidden; /* Ensures logo template doesn't escape rounded corners */
+            z-index: 1; /* Base layer for the container content */
+
             /* Enhanced box shadow for Puffy Look and Outline */
             box-shadow: 
                 /* Subtle, soft inner shadow for depth */
@@ -33,6 +38,26 @@
             /* Increased transition speed */
             transition: all 0.4s ease-in-out;
         }
+
+        /* NEW: Watermark Pseudo-Element Style */
+        .word-cloud-container::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            /* Используем URL-заполнитель для логотипа СНО */
+            /* Использую более светлый заполнитель для лучшего эффекта прозрачности */
+            background-image: url('./IMG_8690.PNG'); 
+            background-repeat: no-repeat;
+            background-position: center center;
+            background-size: 80%; /* Размер логотипа внутри контейнера */
+            opacity: 0.15; /* Высокая прозрачность (15%) */
+            z-index: -1; /* Поместить позади всего контента облака */
+            pointer-events: none;
+        }
+
         .word-item {
             display: inline-block;
             transition: all 0.3s ease;
@@ -42,10 +67,12 @@
             padding: 0.35rem 0.65rem; /* slightly larger padding */
             border-radius: 9999px; /* full pill shape for 'bubble' effect */
             color: #1f2937; /* gray-800 */
-            background-color: rgba(255, 255, 255, 0.9); /* Slightly visible background for the pill */
+            background-color: rgba(255, 255, 255, 0.9); /* Slightly visible background for the pill to overlay watermark */
             /* Add subtle 3D/bubble effect */
             box-shadow: 1px 2px 3px rgba(0, 0, 0, 0.2); 
             text-shadow: none; 
+            position: relative; /* Ensure words stay on top of the watermark */
+            z-index: 2; 
         }
         /* Color variations for better visual appeal */
         .color-1 { color: #059669; } /* emerald darker */
@@ -70,7 +97,9 @@
 </head>
 <body class="bg-gray-100 flex items-center justify-center min-h-screen p-4 font-sans">
 
-    <div class="w-full max-w-xl bg-white shadow-2xl rounded-xl p-6 space-y-6">
+    <!-- REMOVED: Global Watermark Background Layer -->
+
+    <div class="w-full max-w-xl bg-white shadow-2xl rounded-xl p-6 space-y-6 z-10">
         <header class="text-center">
             <h1 class="text-3xl font-extrabold text-gray-800">Облако Ключевых Слов</h1>
             <p id="app-description" class="text-gray-500 mt-2">
@@ -512,7 +541,7 @@
             }
         });
 
-        // NEW Event Listener for Clear Button
+        // Event Listener for Clear Button
         clearCloudButton.addEventListener('click', clearWordCloudData);
         
         // Initialize Firebase and start the app
