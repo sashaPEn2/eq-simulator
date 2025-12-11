@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Динамическое облако слов</title>
+    <title>Динамическое Облако Слов</title>
     <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
@@ -72,7 +72,7 @@
 
     <div class="w-full max-w-xl bg-white shadow-2xl rounded-xl p-6 space-y-6">
         <header class="text-center">
-            <h1 class="text-3xl font-extrabold text-gray-800">СНО ФЭМ. Облако ключевых слов</h1>
+            <h1 class="text-3xl font-extrabold text-gray-800">Облако Ключевых Слов</h1>
             <p id="app-description" class="text-gray-500 mt-2">
                 Соберите ассоциации и вопросы в реальном времени.
             </p>
@@ -109,7 +109,7 @@
             <input type="text" id="keyword-input" placeholder="Введите ключевое слово или вопрос (до 30 символов)" maxlength="30"
                    class="w-full p-3 border-2 border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 transition duration-150">
             <button id="submit-keyword" class="w-full py-3 bg-green-500 text-white font-bold rounded-lg shadow-lg hover:bg-green-600 transition duration-150 transform hover:scale-[1.01] active:scale-[0.99]">
-                Отправить слово
+                Отправить Слово
             </button>
             <p id="voter-status" class="text-center text-sm text-gray-500 mt-2">
                 Последнее слово: <span id="last-keyword" class="font-semibold text-gray-700">Нет данных</span>
@@ -241,7 +241,7 @@
         }
 
         /**
-         * Submits a single keyword vote to Firestore, preventing duplicates per user.
+         * Submits a single keyword vote to Firestore. Now allows duplicates.
          */
         async function submitKeyword() {
             if (!isAuthReady || !db || isSpeakerMode) {
@@ -272,24 +272,9 @@
             const collectionRef = collection(db, getCollectionPath());
             
             try {
-                // Check for existing submission by this user for this keyword
-                const checkQuery = query(
-                    collectionRef, 
-                    where('userId', '==', userId), 
-                    where('keyword', '==', keyword)
-                );
+                // Пользователь теперь может отправлять одно и то же слово неограниченное количество раз.
                 
-                // Using getDocs to fetch documents that match the criteria
-                const existingDocs = await getDocs(checkQuery);
-
-                if (!existingDocs.empty) {
-                    statusMessage.textContent = `Вы уже отправляли слово "${rawKeyword}". Попробуйте другое.`;
-                    setTimeout(() => statusMessage.textContent = 'Подключено.', 5000);
-                    keywordInput.value = '';
-                    return; // Block submission
-                }
-
-                // If no existing submission found, proceed to add the document
+                // Добавляем документ немедленно
                 await addDoc(collectionRef, { 
                     userId: userId,
                     keyword: keyword,
@@ -301,9 +286,8 @@
                 keywordInput.value = '';
                 statusMessage.textContent = `Слово "${rawKeyword}" добавлено в облако!`; // Updated message
             } catch (error) {
-                console.error("Error writing document or checking existence: ", error);
-                // Note: Firestore might require an index for this query (userId + keyword).
-                statusMessage.textContent = 'Ошибка (Возможно, отсутствует индекс). См. консоль.';
+                console.error("Error writing document: ", error);
+                statusMessage.textContent = 'Ошибка записи в БД. См. консоль.';
             }
         }
 
@@ -370,6 +354,9 @@
             const maxSize = 3.5;
             const sizeRange = maxSize - minSize;
 
+            // Сортируем слова по частоте по убыванию. Это гарантирует, что самые большие (частые) 
+            // слова будут отображены первыми в flex-контейнере, что естественным образом 
+            // делает их более центральными и доминирующими.
             keywords.sort((a, b) => counts[b] - counts[a]).forEach((keyword, index) => {
                 const count = counts[keyword];
                 
