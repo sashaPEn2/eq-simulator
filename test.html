@@ -153,7 +153,18 @@
             <div id="total-count" class="text-center text-sm font-semibold text-gray-600">
                 Всего слов: 0
             </div>
-            <!-- NEW: Clear Cloud Button -->
+            
+            <!-- NEW: User Submission Summary Block -->
+            <div class="mt-8 pt-4 border-t border-gray-200">
+                <h3 class="text-xl font-bold text-gray-700 mb-4">Сводка по Участникам</h3>
+                <div id="user-summary-container" class="max-h-60 overflow-y-auto bg-gray-50 p-4 rounded-lg border">
+                    <!-- Summary items will be rendered here -->
+                    <p class="text-sm text-gray-400">Нет данных о вводе слов.</p>
+                </div>
+                <p class="text-xs text-gray-500 mt-2">ID участников, отсортированные по количеству отправленных слов.</p>
+            </div>
+            
+            <!-- Clear Cloud Button -->
             <button id="clear-cloud-button" class="w-full mt-4 py-3 bg-red-500 text-white font-bold rounded-lg shadow-lg hover:bg-red-600 transition duration-150 transform hover:scale-[1.01] active:scale-[0.99]">
                 Очистить Облако Слов
             </button>
@@ -210,6 +221,8 @@
         const loginError = document.getElementById('login-error');
         // NEW UI Element for Clear Button
         const clearCloudButton = document.getElementById('clear-cloud-button');
+        // NEW UI Element for User Summary
+        const userSummaryContainer = document.getElementById('user-summary-container');
         
         // App State
         let db, auth;
@@ -389,14 +402,21 @@
             // onSnapshot listens for real-time updates
             unsubscribeListener = onSnapshot(q, (snapshot) => {
                 const keywordCounts = {};
+                const userWordCounts = {}; // NEW: Объект для подсчета слов по каждому пользователю
                 let totalVotes = 0;
 
                 snapshot.forEach((doc) => {
                     const data = doc.data();
-                    if (data.keyword) {
+                    if (data.keyword && data.userId) { // Проверяем наличие обоих полей
                         const keyword = data.keyword;
-                        // Count frequency of each normalized keyword
+                        const uId = data.userId; 
+                        
+                        // 1. Частота ключевых слов
                         keywordCounts[keyword] = (keywordCounts[keyword] || 0) + 1;
+                        
+                        // 2. Подсчет количества слов на пользователя
+                        userWordCounts[uId] = (userWordCounts[uId] || 0) + 1;
+                        
                         totalVotes++;
                     }
                 });
@@ -404,6 +424,7 @@
                 totalCountDisplay.textContent = `Всего слов: ${totalVotes}`;
                 
                 renderWordCloud(keywordCounts, totalVotes);
+                renderUserSummary(userWordCounts); // NEW: Вызываем функцию для сводки по пользователям
 
             }, (error) => {
                 console.error("Firestore snapshot error: ", error);
@@ -465,6 +486,42 @@
                 wordCloudContainer.appendChild(wordElement);
             });
         }
+        
+        /**
+         * NEW: Renders the summary of submissions per user ID.
+         * @param {object} userCounts - Map of userId to word count.
+         */
+        function renderUserSummary(userCounts) {
+            const container = userSummaryContainer;
+            container.innerHTML = '';
+            
+            const userIds = Object.keys(userCounts);
+            if (userIds.length === 0) {
+                container.innerHTML = '<p class="text-sm text-gray-400">Нет данных о вводе слов.</p>';
+                return;
+            }
+
+            // Преобразуем в массив и сортируем по количеству (по убыванию)
+            const sortedUsers = userIds.map(id => ({ 
+                id: id, 
+                count: userCounts[id] 
+            })).sort((a, b) => b.count - a.count);
+
+            sortedUsers.forEach(user => {
+                const userElement = document.createElement('div');
+                userElement.classList.add('flex', 'justify-between', 'items-center', 'text-sm', 'py-1', 'px-2', 'border-b', 'border-gray-100', 'last:border-b-0', 'hover:bg-white', 'transition');
+                userElement.innerHTML = `
+                    <span class="font-mono text-gray-600 truncate mr-4" title="${user.id}">
+                        ${user.id}
+                    </span>
+                    <span class="font-bold text-indigo-600">
+                        ${user.count} <span class="text-gray-400">слов</span>
+                    </span>
+                `;
+                container.appendChild(userElement);
+            });
+        }
+
 
         // --- UI Update and Mode Logic ---
 
